@@ -1,4 +1,16 @@
-import streamlit as st
+# Statistics
+st.sidebar.divider()
+st.sidebar.subheader("📊 Estadísticas")
+
+total_tasks = sum(len(tasks) for tasks in st.session_state.tasks.values())
+completed_tasks = sum(1 for tasks in st.session_state.tasks.values() 
+                     for task in tasks.values() if task['completed'])
+
+if total_tasks > 0:
+    completion_rate = (completed_tasks / total_tasks) * 100
+    st.sidebar.metric("Total de Tareas", total_tasks)
+    st.sidebar.metric("Completadas", completed_tasks)
+    st.sidebar.metric("Tasa de Finalización", f"{completion_rate:.1import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
@@ -26,22 +38,63 @@ if 'selected_week_start' not in st.session_state:
     st.session_state.selected_week_start = today - timedelta(days=days_since_monday)
 
 def save_tasks():
-    """Save tasks to a JSON file"""
+    """Save tasks to session state (automatic backup)"""
     try:
+        # Try to save to file for local development
         with open('tasks.json', 'w') as f:
             json.dump(st.session_state.tasks, f, default=str)
-    except Exception as e:
-        st.error(f"Error saving tasks: {e}")
+    except Exception:
+        # In deployed environments, file writing might not work
+        # Tasks are already saved in session state
+        pass
 
 def load_tasks():
-    """Load tasks from JSON file"""
+    """Load tasks from JSON file (only works locally)"""
     try:
         with open('tasks.json', 'r') as f:
-            st.session_state.tasks = json.load(f)
+            loaded_tasks = json.load(f)
+            # Only load if we don't have tasks in session state already
+            if not st.session_state.tasks:
+                st.session_state.tasks = loaded_tasks
     except FileNotFoundError:
         st.session_state.tasks = {}
+    except Exception:
+        # In deployed environments, this is expected to fail
+        if 'tasks' not in st.session_state:
+            st.session_state.tasks = {}
+
+def backup_tasks_to_browser():
+    """Create a downloadable backup of tasks"""
+    try:
+        backup_data = {
+            'tasks': st.session_state.tasks,
+            'export_date': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+        return json.dumps(backup_data, indent=2, default=str)
     except Exception as e:
-        st.error(f"Error loading tasks: {e}")
+        st.error(f"Error creating backup: {e}")
+        return None
+
+def restore_tasks_from_backup(uploaded_file):
+    """Restore tasks from uploaded backup file"""
+    try:
+        backup_data = json.load(uploaded_file)
+        
+        # Validate backup structure
+        if 'tasks' in backup_data:
+            st.session_state.tasks = backup_data['tasks']
+            save_tasks()  # Try to save locally if possible
+            return True
+        else:
+            st.error("Formato de archivo de respaldo inválido")
+            return False
+    except json.JSONDecodeError:
+        st.error("Error: El archivo no es un JSON válido")
+        return False
+    except Exception as e:
+        st.error(f"Error restaurando el respaldo: {e}")
+        return False
 
 def add_task(date_str, title, priority, description=""):
     """Add a new task"""
@@ -476,30 +529,32 @@ with col2:
 
 # Sidebar for adding tasks and calendar
 with st.sidebar:
-    st.header("Add New Task")
+    st.header("Añadir Nueva Tarea")
     
     # Date selection for new tasks
     if st.session_state.view_mode == 'daily':
-        task_date = st.date_input("Date", value=st.session_state.selected_date)
+        task_date = st.date_input("Fecha", value=st.session_state.selected_date, format="DD/MM/YYYY")
     else:
-        task_date = st.date_input("Date", value=datetime.now().date())
+        task_date = st.date_input("Fecha", value=datetime.now().date(), format="DD/MM/YYYY")
     
     date_str = task_date.strftime('%Y-%m-%d')
     
     # Task form
     with st.form("add_task_form"):
-        task_title = st.text_input("Task Title*", placeholder="Enter task title...")
-        task_description = st.text_area("Description (optional)", placeholder="Task details...")
-        task_priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
+        task_title = st.text_input("Título de la Tarea*", placeholder="Ingresa el título de la tarea...")
+        task_description = st.text_area("Descripción (opcional)", placeholder="Detalles de la tarea...")
+        task_priority = st.selectbox("Prioridad", ["High", "Medium", "Low"], 
+                                   index=1,
+                                   format_func=lambda x: {'High': 'Alta', 'Medium': 'Media', 'Low': 'Baja'}[x])
         
-        submitted = st.form_submit_button("Add Task")
+        submitted = st.form_submit_button("Añadir Tarea")
         
         if submitted and task_title:
             add_task(date_str, task_title, task_priority, task_description)
-            st.success("Task added!")
+            st.success("¡Tarea añadida!")
             st.rerun()
         elif submitted and not task_title:
-            st.error("Please enter a task title!")
+            st.error("¡Por favor ingresa un título para la tarea!")
     
     st.divider()
     
@@ -509,9 +564,9 @@ with st.sidebar:
     
     # Quick navigation
     st.divider()
-    st.subheader("🔍 Quick Navigation")
+    st.subheader("🔍 Navegación Rápida")
     
-    if st.button("📍 Go to Today", use_container_width=True):
+    if st.button("📍 Ir a Hoy", use_container_width=True):
         st.session_state.selected_date = datetime.now().date()
         if st.session_state.view_mode == 'weekly':
             today = datetime.now().date()
@@ -520,7 +575,7 @@ with st.sidebar:
         st.rerun()
     
     # Show recent dates with tasks
-    st.write("**Recent dates with tasks:**")
+    st.write("**Fechas recientes con tareas:**")
     dates_with_tasks = sorted([date for date in st.session_state.tasks.keys() if st.session_state.tasks[date]], reverse=True)
     
     for date_str in dates_with_tasks[:5]:
@@ -528,8 +583,9 @@ with st.sidebar:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
             task_count = len(st.session_state.tasks[date_str])
             completed_count = sum(1 for task in st.session_state.tasks[date_str].values() if task['completed'])
+            formatted_date = format_date_spanish(date_obj)
             
-            if st.button(f"{date_obj.strftime('%m/%d')} ({completed_count}/{task_count})", 
+            if st.button(f"{formatted_date} ({completed_count}/{task_count})", 
                         key=f"nav_{date_str}", use_container_width=True):
                 st.session_state.selected_date = date_obj
                 if st.session_state.view_mode == 'weekly':
@@ -574,48 +630,120 @@ if today_str in st.session_state.tasks:
 
 # Data management
 st.sidebar.divider()
-st.sidebar.subheader("🔧 Data Management")
+st.sidebar.subheader("🔧 Gestión de Datos")
 
-if st.sidebar.button("🔄 Manual Task Rollover"):
+# Auto backup notification
+if st.session_state.tasks:
+    st.sidebar.info("💾 Las tareas se guardan automáticamente durante la sesión")
+
+if st.sidebar.button("🔄 Migración Manual de Tareas"):
     move_incomplete_tasks()
     st.rerun()
 
-if st.sidebar.button("💾 Export Data"):
-    try:
-        data_json = json.dumps(st.session_state.tasks, indent=2, default=str)
-        st.sidebar.download_button(
-            label="Download JSON",
-            data=data_json,
-            file_name=f"tasks_export_{datetime.now().strftime('%Y%m%d')}.json",
-            mime="application/json"
-        )
-    except Exception as e:
-        st.sidebar.error(f"Export failed: {e}")
+# Backup and restore section
+st.sidebar.write("**Respaldo Manual:**")
+
+# Create backup
+backup_data = backup_tasks_to_browser()
+if backup_data:
+    st.sidebar.download_button(
+        label="💾 Descargar Respaldo",
+        data=backup_data,
+        file_name=f"tareas_respaldo_{datetime.now().strftime('%d_%m_%Y')}.json",
+        mime="application/json",
+        help="Descarga tus tareas como respaldo",
+        use_container_width=True
+    )
+
+# Restore from backup
+uploaded_backup = st.sidebar.file_uploader(
+    "📂 Restaurar desde Respaldo",
+    type=['json'],
+    help="Sube un archivo de respaldo para restaurar tus tareas"
+)
+
+if uploaded_backup is not None:
+    if st.sidebar.button("🔄 Restaurar Tareas", use_container_width=True):
+        if restore_tasks_from_backup(uploaded_backup):
+            st.sidebar.success("¡Tareas restauradas exitosamente!")
+            st.rerun()
+
+# Warning about deployed environment
+if st.sidebar.button("ℹ️ Información de Almacenamiento"):
+    st.sidebar.info("""
+    **Información importante:**
+    
+    🏠 **Local:** Las tareas se guardan automáticamente en un archivo
+    
+    ☁️ **En línea:** Las tareas se mantienen durante la sesión del navegador
+    
+    💾 **Recomendación:** Descarga respaldos regularmente para no perder tus datos
+    """)
+
+# Clear all data option
+st.sidebar.write("**Limpiar Datos:**")
+if st.sidebar.button("🗑️ Borrar Todas las Tareas", use_container_width=True):
+    if st.sidebar.button("⚠️ Confirmar Borrado", use_container_width=True, type="secondary"):
+        st.session_state.tasks = {}
+        save_tasks()
+        st.sidebar.success("Todas las tareas han sido borradas")
+        st.rerun()
 
 # Instructions
-with st.expander("ℹ️ How to use this app"):
+with st.expander("ℹ️ Cómo usar esta aplicación"):
     st.markdown("""
-    **View Modes:**
-    - **Daily View**: Focus on one day at a time with full calendar widget
-    - **Weekly View**: See an entire week's tasks at once
+    **Modos de Vista:**
+    - **Vista Diaria**: Enfócate en un día a la vez con calendario completo
+    - **Vista Semanal**: Ve las tareas de toda la semana de una vez
     
-    **Navigation:**
-    - Use the visual calendar to select dates (Daily mode)
-    - Use navigation buttons for weeks (Weekly mode)
-    - Quick access to today and recent dates with tasks
+    **Navegación:**
+    - Usa el calendario visual para seleccionar fechas (Modo diario)
+    - Usa los botones de navegación para las semanas (Modo semanal)
+    - Acceso rápido a hoy y fechas recientes con tareas
     
-    **Adding Tasks:**
-    - Use the sidebar form to add new tasks
-    - Set priority: High (🔴), Medium (🟡), Low (🟢)
-    - Tasks are automatically sorted by priority
+    **Añadir Tareas:**
+    - Usa el formulario de la barra lateral para añadir nuevas tareas
+    - Establece prioridad: Alta (🔴), Media (🟡), Baja (🟢)
+    - Las tareas se ordenan automáticamente por prioridad
     
-    **Managing Tasks:**
-    - Check boxes to mark tasks as completed
-    - Use 🗑️ button to delete tasks
-    - Incomplete tasks automatically move to the next day
+    **Gestionar Tareas:**
+    - Marca las casillas para completar tareas
+    - Usa el botón ✏️ para editar tareas y moverlas entre fechas
+    - Usa el botón 🗑️ para eliminar tareas
+    - Las tareas incompletas se mueven automáticamente al día siguiente
     
-    **Calendar Features:**
-    - Numbers in parentheses show (completed/total) tasks
-    - 📍 indicates today's date
-    - Selected dates are highlighted
+    **Almacenamiento de Datos:**
+    - **Localmente**: Las tareas se guardan automáticamente
+    - **En línea**: Las tareas se mantienen durante la sesión del navegador
+    - **Respaldos**: Descarga respaldos regulares para no perder datos
+    
+    **Características del Calendario:**
+    - Los números en paréntesis muestran tareas (completadas/total)
+    - 📍 indica la fecha de hoy
+    - Las fechas seleccionadas están resaltadas
     """)
+
+# Add a persistent storage warning for deployed environments
+if 'storage_warning_shown' not in st.session_state:
+    st.session_state.storage_warning_shown = True
+    
+    # Check if we're in a deployed environment (no file write access)
+    try:
+        with open('test_write.txt', 'w') as f:
+            f.write('test')
+        import os
+        os.remove('test_write.txt')
+        # We can write files - probably local
+        local_env = True
+    except:
+        # Can't write files - probably deployed
+        local_env = False
+        
+    if not local_env and not st.session_state.tasks:
+        st.warning("""
+        ⚠️ **Aviso importante:** Estás usando la versión en línea de la aplicación. 
+        Las tareas se mantienen durante tu sesión del navegador, pero se perderán al cerrar la pestaña.
+        
+        **Recomendación:** Descarga respaldos regularmente usando el botón "💾 Descargar Respaldo" en la barra lateral.
+        """)
+
