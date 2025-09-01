@@ -333,7 +333,7 @@ def display_daily_tasks():
                         {priority_icon} <strong>{task['title']}</strong>
                         <br><small>Prioridad: {priority_spanish}</small>
                         {f"<br><em>{task['description']}</em>" if task['description'] else ""}
-                        {'<br><small>📁 Movida desde día anterior</small>' if task.get('moved_from') else ''}
+                        {'📁 Movida desde día anterior' if task.get('moved_from') else ''}
                     </div>
                     """, unsafe_allow_html=True)
                 
