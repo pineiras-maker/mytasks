@@ -1,16 +1,4 @@
-# Statistics
-st.sidebar.divider()
-st.sidebar.subheader("📊 Estadísticas")
-
-total_tasks = sum(len(tasks) for tasks in st.session_state.tasks.values())
-completed_tasks = sum(1 for tasks in st.session_state.tasks.values() 
-                     for task in tasks.values() if task['completed'])
-
-if total_tasks > 0:
-    completion_rate = (completed_tasks / total_tasks) * 100
-    st.sidebar.metric("Total de Tareas", total_tasks)
-    st.sidebar.metric("Completadas", completed_tasks)
-    st.sidebar.metric("Tasa de Finalización", f"{completion_rate:.1import streamlit as st
+import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
