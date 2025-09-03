@@ -26,63 +26,22 @@ if 'selected_week_start' not in st.session_state:
     st.session_state.selected_week_start = today - timedelta(days=days_since_monday)
 
 def save_tasks():
-    """Save tasks to session state (automatic backup)"""
+    """Save tasks to a JSON file"""
     try:
-        # Try to save to file for local development
         with open('tasks.json', 'w') as f:
             json.dump(st.session_state.tasks, f, default=str)
-    except Exception:
-        # In deployed environments, file writing might not work
-        # Tasks are already saved in session state
-        pass
+    except Exception as e:
+        st.error(f"Error saving tasks: {e}")
 
 def load_tasks():
-    """Load tasks from JSON file (only works locally)"""
+    """Load tasks from JSON file"""
     try:
         with open('tasks.json', 'r') as f:
-            loaded_tasks = json.load(f)
-            # Only load if we don't have tasks in session state already
-            if not st.session_state.tasks:
-                st.session_state.tasks = loaded_tasks
+            st.session_state.tasks = json.load(f)
     except FileNotFoundError:
         st.session_state.tasks = {}
-    except Exception:
-        # In deployed environments, this is expected to fail
-        if 'tasks' not in st.session_state:
-            st.session_state.tasks = {}
-
-def backup_tasks_to_browser():
-    """Create a downloadable backup of tasks"""
-    try:
-        backup_data = {
-            'tasks': st.session_state.tasks,
-            'export_date': datetime.now().isoformat(),
-            'version': '1.0'
-        }
-        return json.dumps(backup_data, indent=2, default=str)
     except Exception as e:
-        st.error(f"Error creating backup: {e}")
-        return None
-
-def restore_tasks_from_backup(uploaded_file):
-    """Restore tasks from uploaded backup file"""
-    try:
-        backup_data = json.load(uploaded_file)
-        
-        # Validate backup structure
-        if 'tasks' in backup_data:
-            st.session_state.tasks = backup_data['tasks']
-            save_tasks()  # Try to save locally if possible
-            return True
-        else:
-            st.error("Formato de archivo de respaldo inválido")
-            return False
-    except json.JSONDecodeError:
-        st.error("Error: El archivo no es un JSON válido")
-        return False
-    except Exception as e:
-        st.error(f"Error restaurando el respaldo: {e}")
-        return False
+        st.error(f"Error loading tasks: {e}")
 
 def add_task(date_str, title, priority, description=""):
     """Add a new task"""
@@ -112,50 +71,6 @@ def delete_task(date_str, task_id):
         if not st.session_state.tasks[date_str]:
             del st.session_state.tasks[date_str]
         save_tasks()
-
-def edit_task(old_date_str, task_id, new_date_str, title, priority, description):
-    """Edit a task and optionally move it to a different date"""
-    if old_date_str in st.session_state.tasks and task_id in st.session_state.tasks[old_date_str]:
-        # Get the existing task
-        task = st.session_state.tasks[old_date_str][task_id].copy()
-        
-        # Update task details
-        task['title'] = title
-        task['priority'] = priority
-        task['description'] = description
-        task['modified_at'] = datetime.now().isoformat()
-        
-        # If moving to a different date
-        if old_date_str != new_date_str:
-            # Remove from old date
-            del st.session_state.tasks[old_date_str][task_id]
-            if not st.session_state.tasks[old_date_str]:
-                del st.session_state.tasks[old_date_str]
-            
-            # Add to new date
-            if new_date_str not in st.session_state.tasks:
-                st.session_state.tasks[new_date_str] = {}
-            st.session_state.tasks[new_date_str][task_id] = task
-        else:
-            # Just update in place
-            st.session_state.tasks[old_date_str][task_id] = task
-        
-        save_tasks()
-
-def format_date_spanish(date_obj):
-    """Format date in Spanish format (DD/MM/YYYY)"""
-    return date_obj.strftime('%d/%m/%Y')
-
-def format_date_long_spanish(date_obj):
-    """Format date in long Spanish format"""
-    days_spanish = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-    months_spanish = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-    
-    day_name = days_spanish[date_obj.weekday()]
-    month_name = months_spanish[date_obj.month]
-    
-    return f"{day_name}, {date_obj.day} de {month_name} de {date_obj.year}"
 
 def move_incomplete_tasks():
     """Move incomplete tasks from previous days to today"""
@@ -242,9 +157,7 @@ def create_calendar_widget():
             st.rerun()
     
     with col2:
-        months_spanish = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-        st.write(f"**{months_spanish[current_month]} {current_year}**")
+        st.write(f"**{calendar.month_name[current_month]} {current_year}**")
     
     with col3:
         if st.button("▶", key="next_month"):
@@ -259,7 +172,7 @@ def create_calendar_widget():
     cal = calendar.monthcalendar(current_year, current_month)
     
     # Days of week header
-    days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     cols = st.columns(7)
     for i, day in enumerate(days):
         with cols[i]:
@@ -303,16 +216,16 @@ def create_calendar_widget():
 def display_daily_tasks():
     """Display tasks for selected day"""
     date_str = st.session_state.selected_date.strftime('%Y-%m-%d')
-    st.subheader(f"Tareas para {format_date_long_spanish(st.session_state.selected_date)}")
+    st.subheader(f"Tasks for {st.session_state.selected_date.strftime('%A, %B %d, %Y')}")
     
     tasks = get_sorted_tasks(date_str)
     
     if not tasks:
-        st.info("No hay tareas para esta fecha. ¡Añade una tarea usando la barra lateral!")
+        st.info("No tasks for this date. Add a task using the sidebar!")
     else:
         for task_id, task in tasks:
             with st.container():
-                col_check, col_content, col_actions = st.columns([0.5, 4, 1])
+                col_check, col_content, col_actions = st.columns([0.5, 4, 0.5])
                 
                 with col_check:
                     if st.checkbox("", value=task['completed'], key=f"check_{task_id}"):
@@ -326,63 +239,20 @@ def display_daily_tasks():
                 with col_content:
                     priority_icon = get_priority_color(task['priority'])
                     title_style = "text-decoration: line-through; opacity: 0.6;" if task['completed'] else ""
-                    priority_spanish = {'High': 'Alta', 'Medium': 'Media', 'Low': 'Baja'}.get(task['priority'], task['priority'])
                     
                     st.markdown(f"""
                     <div style="{title_style}">
                         {priority_icon} <strong>{task['title']}</strong>
-                        <br><small>Prioridad: {priority_spanish}</small>
+                        <br><small>Priority: {task['priority']}</small>
                         {f"<br><em>{task['description']}</em>" if task['description'] else ""}
-                        {'📁 Movida desde día anterior' if task.get('moved_from') else ''}
+                        {'<br><small>📁 Moved from previous day</small>' if task.get('moved_from') else ''}
                     </div>
                     """, unsafe_allow_html=True)
                 
                 with col_actions:
-                    col_edit, col_delete = st.columns(2)
-                    with col_edit:
-                        if st.button("✏️", key=f"edit_{task_id}", help="Editar tarea"):
-                            st.session_state[f'editing_{task_id}'] = True
-                            st.rerun()
-                    with col_delete:
-                        if st.button("🗑️", key=f"del_{task_id}", help="Eliminar tarea"):
-                            delete_task(date_str, task_id)
-                            st.rerun()
-                
-                # Edit form (appears when edit button is clicked)
-                if st.session_state.get(f'editing_{task_id}', False):
-                    with st.form(key=f"edit_form_{task_id}"):
-                        st.write("**Editar Tarea:**")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            edit_title = st.text_input("Título", value=task['title'], key=f"edit_title_{task_id}")
-                            edit_priority = st.selectbox("Prioridad", ["High", "Medium", "Low"], 
-                                                       index=["High", "Medium", "Low"].index(task['priority']),
-                                                       format_func=lambda x: {'High': 'Alta', 'Medium': 'Media', 'Low': 'Baja'}[x],
-                                                       key=f"edit_priority_{task_id}")
-                        with col2:
-                            edit_date = st.date_input("Mover a fecha", 
-                                                    value=st.session_state.selected_date, 
-                                                    key=f"edit_date_{task_id}")
-                            edit_description = st.text_area("Descripción", 
-                                                           value=task.get('description', ''), 
-                                                           key=f"edit_desc_{task_id}")
-                        
-                        col_save, col_cancel = st.columns(2)
-                        with col_save:
-                            if st.form_submit_button("💾 Guardar", use_container_width=True):
-                                new_date_str = edit_date.strftime('%Y-%m-%d')
-                                edit_task(date_str, task_id, new_date_str, edit_title, edit_priority, edit_description)
-                                st.session_state[f'editing_{task_id}'] = False
-                                # Update selected date if task was moved
-                                if new_date_str != date_str:
-                                    st.session_state.selected_date = edit_date
-                                st.success("¡Tarea actualizada!")
-                                st.rerun()
-                        with col_cancel:
-                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                st.session_state[f'editing_{task_id}'] = False
-                                st.rerun()
+                    if st.button("🗑️", key=f"del_{task_id}", help="Delete task"):
+                        delete_task(date_str, task_id)
+                        st.rerun()
                 
                 st.divider()
 
@@ -391,31 +261,28 @@ def display_weekly_tasks():
     week_start = st.session_state.selected_week_start
     week_end = week_start + timedelta(days=6)
     
-    st.subheader(f"Semana del {format_date_spanish(week_start)} - {format_date_spanish(week_end)}")
+    st.subheader(f"Week of {week_start.strftime('%B %d')} - {week_end.strftime('%B %d, %Y')}")
     
     # Week navigation
     col1, col2, col3 = st.columns([1, 4, 1])
     with col1:
-        if st.button("◀ Semana Anterior", key="prev_week"):
+        if st.button("◀ Previous Week", key="prev_week"):
             st.session_state.selected_week_start -= timedelta(days=7)
             st.rerun()
     with col3:
-        if st.button("Siguiente Semana ▶", key="next_week"):
+        if st.button("Next Week ▶", key="next_week"):
             st.session_state.selected_week_start += timedelta(days=7)
             st.rerun()
     
     # Display each day of the week
-    days_spanish = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-    
     for i in range(7):
         current_day = week_start + timedelta(days=i)
         date_str = current_day.strftime('%Y-%m-%d')
-        day_name = days_spanish[i]
-        formatted_date = format_date_spanish(current_day)
+        day_name = current_day.strftime('%A, %B %d')
         
         # Day header
         is_today = current_day == datetime.now().date()
-        header_text = f"**{day_name}, {formatted_date}**"
+        header_text = f"**{day_name}**"
         if is_today:
             header_text += " 📍"
         
@@ -425,11 +292,11 @@ def display_weekly_tasks():
         tasks = get_sorted_tasks(date_str)
         
         if not tasks:
-            st.markdown("*Sin tareas*")
+            st.markdown("*No tasks*")
         else:
             # Create columns for tasks
             for task_id, task in tasks[:5]:  # Show max 5 tasks per day in weekly view
-                col_check, col_content, col_actions = st.columns([0.3, 4, 0.5])
+                col_check, col_content, col_actions = st.columns([0.3, 4, 0.3])
                 
                 with col_check:
                     if st.checkbox("", value=task['completed'], key=f"week_check_{task_id}"):
@@ -446,52 +313,13 @@ def display_weekly_tasks():
                     st.markdown(f'<span style="{title_style}">{priority_icon} {task["title"]}</span>', unsafe_allow_html=True)
                 
                 with col_actions:
-                    col_edit, col_delete = st.columns(2)
-                    with col_edit:
-                        if st.button("✏️", key=f"week_edit_{task_id}", help="Editar tarea"):
-                            st.session_state[f'editing_{task_id}'] = True
-                            st.rerun()
-                    with col_delete:
-                        if st.button("🗑️", key=f"week_del_{task_id}", help="Eliminar tarea"):
-                            delete_task(date_str, task_id)
-                            st.rerun()
-                
-                # Edit form for weekly view
-                if st.session_state.get(f'editing_{task_id}', False):
-                    with st.form(key=f"week_edit_form_{task_id}"):
-                        st.write("**Editar Tarea:**")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            edit_title = st.text_input("Título", value=task['title'], key=f"week_edit_title_{task_id}")
-                            edit_priority = st.selectbox("Prioridad", ["High", "Medium", "Low"], 
-                                                       index=["High", "Medium", "Low"].index(task['priority']),
-                                                       format_func=lambda x: {'High': 'Alta', 'Medium': 'Media', 'Low': 'Baja'}[x],
-                                                       key=f"week_edit_priority_{task_id}")
-                        with col2:
-                            edit_date = st.date_input("Mover a fecha", 
-                                                    value=current_day, 
-                                                    key=f"week_edit_date_{task_id}")
-                            edit_description = st.text_area("Descripción", 
-                                                           value=task.get('description', ''), 
-                                                           key=f"week_edit_desc_{task_id}")
-                        
-                        col_save, col_cancel = st.columns(2)
-                        with col_save:
-                            if st.form_submit_button("💾 Guardar", use_container_width=True):
-                                new_date_str = edit_date.strftime('%Y-%m-%d')
-                                edit_task(date_str, task_id, new_date_str, edit_title, edit_priority, edit_description)
-                                st.session_state[f'editing_{task_id}'] = False
-                                st.success("¡Tarea actualizada!")
-                                st.rerun()
-                        with col_cancel:
-                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                st.session_state[f'editing_{task_id}'] = False
-                                st.rerun()
+                    if st.button("🗑️", key=f"week_del_{task_id}", help="Delete task"):
+                        delete_task(date_str, task_id)
+                        st.rerun()
             
             # Show "and X more" if there are more tasks
             if len(tasks) > 5:
-                st.markdown(f"*... y {len(tasks) - 5} tareas más*")
+                st.markdown(f"*... and {len(tasks) - 5} more tasks*")
         
         st.divider()
 
@@ -502,14 +330,13 @@ load_tasks()
 move_incomplete_tasks()
 
 # Main UI
-st.title("📅 Calendario de Tareas")
+st.title("📅 Task Calendar")
 
 # View mode toggle
 col1, col2 = st.columns([3, 1])
 with col2:
-    view_mode = st.selectbox("Modo de Vista", ["daily", "weekly"], 
+    view_mode = st.selectbox("View Mode", ["daily", "weekly"], 
                             index=0 if st.session_state.view_mode == 'daily' else 1,
-                            format_func=lambda x: "Diario" if x == "daily" else "Semanal",
                             key="view_mode_select")
     if view_mode != st.session_state.view_mode:
         st.session_state.view_mode = view_mode
@@ -517,32 +344,30 @@ with col2:
 
 # Sidebar for adding tasks and calendar
 with st.sidebar:
-    st.header("Añadir Nueva Tarea")
+    st.header("Add New Task")
     
     # Date selection for new tasks
     if st.session_state.view_mode == 'daily':
-        task_date = st.date_input("Fecha", value=st.session_state.selected_date, format="DD/MM/YYYY")
+        task_date = st.date_input("Date", value=st.session_state.selected_date)
     else:
-        task_date = st.date_input("Fecha", value=datetime.now().date(), format="DD/MM/YYYY")
+        task_date = st.date_input("Date", value=datetime.now().date())
     
     date_str = task_date.strftime('%Y-%m-%d')
     
     # Task form
     with st.form("add_task_form"):
-        task_title = st.text_input("Título de la Tarea*", placeholder="Ingresa el título de la tarea...")
-        task_description = st.text_area("Descripción (opcional)", placeholder="Detalles de la tarea...")
-        task_priority = st.selectbox("Prioridad", ["High", "Medium", "Low"], 
-                                   index=1,
-                                   format_func=lambda x: {'High': 'Alta', 'Medium': 'Media', 'Low': 'Baja'}[x])
+        task_title = st.text_input("Task Title*", placeholder="Enter task title...")
+        task_description = st.text_area("Description (optional)", placeholder="Task details...")
+        task_priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
         
-        submitted = st.form_submit_button("Añadir Tarea")
+        submitted = st.form_submit_button("Add Task")
         
         if submitted and task_title:
             add_task(date_str, task_title, task_priority, task_description)
-            st.success("¡Tarea añadida!")
+            st.success("Task added!")
             st.rerun()
         elif submitted and not task_title:
-            st.error("¡Por favor ingresa un título para la tarea!")
+            st.error("Please enter a task title!")
     
     st.divider()
     
@@ -552,9 +377,9 @@ with st.sidebar:
     
     # Quick navigation
     st.divider()
-    st.subheader("🔍 Navegación Rápida")
+    st.subheader("🔍 Quick Navigation")
     
-    if st.button("📍 Ir a Hoy", use_container_width=True):
+    if st.button("📍 Go to Today", use_container_width=True):
         st.session_state.selected_date = datetime.now().date()
         if st.session_state.view_mode == 'weekly':
             today = datetime.now().date()
@@ -563,7 +388,7 @@ with st.sidebar:
         st.rerun()
     
     # Show recent dates with tasks
-    st.write("**Fechas recientes con tareas:**")
+    st.write("**Recent dates with tasks:**")
     dates_with_tasks = sorted([date for date in st.session_state.tasks.keys() if st.session_state.tasks[date]], reverse=True)
     
     for date_str in dates_with_tasks[:5]:
@@ -571,9 +396,8 @@ with st.sidebar:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
             task_count = len(st.session_state.tasks[date_str])
             completed_count = sum(1 for task in st.session_state.tasks[date_str].values() if task['completed'])
-            formatted_date = format_date_spanish(date_obj)
             
-            if st.button(f"{formatted_date} ({completed_count}/{task_count})", 
+            if st.button(f"{date_obj.strftime('%m/%d')} ({completed_count}/{task_count})", 
                         key=f"nav_{date_str}", use_container_width=True):
                 st.session_state.selected_date = date_obj
                 if st.session_state.view_mode == 'weekly':
@@ -618,64 +442,23 @@ if today_str in st.session_state.tasks:
 
 # Data management
 st.sidebar.divider()
-st.sidebar.subheader("🔧 Gestión de Datos")
+st.sidebar.subheader("🔧 Data Management")
 
-# Auto backup notification
-if st.session_state.tasks:
-    st.sidebar.info("💾 Las tareas se guardan automáticamente durante la sesión")
-
-if st.sidebar.button("🔄 Migración Manual de Tareas"):
+if st.sidebar.button("🔄 Manual Task Rollover"):
     move_incomplete_tasks()
     st.rerun()
 
-# Backup and restore section
-st.sidebar.write("**Respaldo Manual:**")
-
-# Create backup
-backup_data = backup_tasks_to_browser()
-if backup_data:
-    st.sidebar.download_button(
-        label="💾 Descargar Respaldo",
-        data=backup_data,
-        file_name=f"tareas_respaldo_{datetime.now().strftime('%d_%m_%Y')}.json",
-        mime="application/json",
-        help="Descarga tus tareas como respaldo",
-        use_container_width=True
-    )
-
-# Restore from backup
-uploaded_backup = st.sidebar.file_uploader(
-    "📂 Restaurar desde Respaldo",
-    type=['json'],
-    help="Sube un archivo de respaldo para restaurar tus tareas"
-)
-
-if uploaded_backup is not None:
-    if st.sidebar.button("🔄 Restaurar Tareas", use_container_width=True):
-        if restore_tasks_from_backup(uploaded_backup):
-            st.sidebar.success("¡Tareas restauradas exitosamente!")
-            st.rerun()
-
-# Warning about deployed environment
-if st.sidebar.button("ℹ️ Información de Almacenamiento"):
-    st.sidebar.info("""
-    **Información importante:**
-    
-    🏠 **Local:** Las tareas se guardan automáticamente en un archivo
-    
-    ☁️ **En línea:** Las tareas se mantienen durante la sesión del navegador
-    
-    💾 **Recomendación:** Descarga respaldos regularmente para no perder tus datos
-    """)
-
-# Clear all data option
-st.sidebar.write("**Limpiar Datos:**")
-if st.sidebar.button("🗑️ Borrar Todas las Tareas", use_container_width=True):
-    if st.sidebar.button("⚠️ Confirmar Borrado", use_container_width=True, type="secondary"):
-        st.session_state.tasks = {}
-        save_tasks()
-        st.sidebar.success("Todas las tareas han sido borradas")
-        st.rerun()
+if st.sidebar.button("💾 Export Data"):
+    try:
+        data_json = json.dumps(st.session_state.tasks, indent=2, default=str)
+        st.sidebar.download_button(
+            label="Download JSON",
+            data=data_json,
+            file_name=f"tasks_export_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
+    except Exception as e:
+        st.sidebar.error(f"Export failed: {e}")
 
 # Instructions
 with st.expander("ℹ️ Cómo usar esta aplicación"):
@@ -727,11 +510,43 @@ if 'storage_warning_shown' not in st.session_state:
         # Can't write files - probably deployed
         local_env = False
         
-    if not local_env and not st.session_state.tasks:
-        st.warning("""
-        ⚠️ **Aviso importante:** Estás usando la versión en línea de la aplicación. 
-        Las tareas se mantienen durante tu sesión del navegador, pero se perderán al cerrar la pestaña.
+    if not local_env:
+        st.error("""
+        🚨 **AVISO CRÍTICO - App Desplegada en la Nube** 
         
-        **Recomendación:** Descarga respaldos regularmente usando el botón "💾 Descargar Respaldo" en la barra lateral.
+        Tu app puede "dormirse" después de unas pocas horas de inactividad, perdiendo TODAS las tareas.
+        
+        **Soluciones inmediatas:**
+        1. ✅ Activa "Auto-refrescar cada 10 minutos" en la barra lateral
+        2. 💾 Descarga respaldos CADA VEZ que agregues tareas importantes
+        3. 📱 Guarda el enlace en tu teléfono y ábrelo ocasionalmente
+        
+        **Para uso serio, considera:** migrar a una base de datos permanente
         """)
+
+# Show backup reminder if user has tasks but auto-refresh is off
+if st.session_state.tasks and not st.session_state.get('auto_refresh_enabled', False):
+    st.warning("""
+    ⚠️ **Recordatorio:** Tu app puede dormirse y perder las tareas. 
+    
+    **Opciones:** 
+    - Activa "Auto-refrescar" en la barra lateral, O
+    - Descarga un respaldo ahora mismo
+    """)
+
+# Emergency backup button in main area if lots of tasks
+task_count = sum(len(tasks) for tasks in st.session_state.tasks.values())
+if task_count > 15 and not st.session_state.get('auto_refresh_enabled', False):
+    st.error(f"🚨 ¡Tienes {task_count} tareas sin protección automática!")
+    
+    backup_data = backup_tasks_to_browser()
+    if backup_data:
+        st.download_button(
+            label="🚨 RESPALDO DE EMERGENCIA - DESCARGAR AHORA",
+            data=backup_data,
+            file_name=f"EMERGENCIA_tareas_{datetime.now().strftime('%d_%m_%Y_%H%M')}.json",
+            mime="application/json",
+            type="primary",
+            use_container_width=True
+        )
 
