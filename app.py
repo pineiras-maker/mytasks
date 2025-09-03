@@ -647,4 +647,32 @@ st.sidebar.subheader("🔧 Gestión de Datos")
 
 # Auto backup notification with more prominence
 task_count = sum(len(tasks) for tasks in st.session_state.tasks.values())
-if st.session_
+if 'auto_refresh_enabled' not in st.session_state:
+    st.session_state.auto_refresh_enabled = False
+    
+# Auto-refresh functionality to keep app alive
+def add_auto_refresh():
+    """Add JavaScript to auto-refresh the page periodically"""
+    if st.session_state.get('auto_refresh_enabled', False):
+        # Refresh every 10 minutes (600 seconds) to keep app alive
+        st.markdown("""
+        <script>
+        setTimeout(function() {
+            window.location.reload();
+        }, 600000); // 10 minutes
+        </script>
+        """, unsafe_allow_html=True)
+
+# Add auto-refresh if enabled
+add_auto_refresh()
+
+# Auto-refresh toggle
+auto_refresh = st.sidebar.checkbox(
+    "🔄 Auto-refrescar cada 10 minutos", 
+    value=st.session_state.get('auto_refresh_enabled', False),
+    help="Mantiene la app despierta refrescando automáticamente"
+)
+
+if auto_refresh != st.session_state.get('auto_refresh_enabled', False):
+    st.session_state.auto_refresh_enabled = auto_refresh
+    st.rerun()
